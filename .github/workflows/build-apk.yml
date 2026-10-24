@@ -1,0 +1,52 @@
+
+name: Build Knights APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['*.zip', '.github/workflows/build-apk.yml']
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unpack the project zip
+        run: |
+          ZIP=$(ls -1 *.zip | head -1)
+          echo "Using $ZIP"
+          mkdir -p work && unzip -q -o "$ZIP" -d work
+          SETTINGS=$(find work -name settings.gradle.kts -not -path '*/public/*' | head -1)
+          echo "ROOT=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"
+
+      - name: Make sure a debug keystore exists
+        working-directory: ${{ env.ROOT }}
+        run: |
+          [ -f debug.keystore ] || keytool -genkeypair -keystore debug.keystore -alias androiddebugkey -storepass android -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.3.1
+
+      - name: Build debug APK
+        working-directory: ${{ env.ROOT }}
+        run: gradle assembleDebug --stacktrace --no-daemon
+
+      - name: Show signing fingerprint (add the SHA-1 in Firebase for Google sign-in)
+        working-directory: ${{ env.ROOT }}
+        run: keytool -list -v -keystore debug.keystore -storepass android -alias androiddebugkey | grep -E "SHA1|SHA256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: knights-debug-apk
+          path: ${{ env.ROOT }}/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
