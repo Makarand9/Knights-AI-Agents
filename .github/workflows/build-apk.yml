@@ -1,5 +1,5 @@
 
-name: Build Knights APK
+name: Knights-AI Agents
 on:
   workflow_dispatch:
   push:
